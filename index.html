@@ -434,11 +434,16 @@
             if (!ctx) return;
 
             const total = data.reduce((a, b) => a + b, 0);
+            // Use part-specific colors per bar
+            const bgColors = PART_CONFIG.map(p => (p.color || '#4f46e5') + '80');
+            const borderColors = PART_CONFIG.map(p => p.color || '#4f46e5');
 
             if (chartInstances[chartId]) {
                 chartInstances[chartId].data.labels = labels;
                 chartInstances[chartId].data.datasets[0].data = data;
-                chartInstances[chartId].data.datasets[0].label = `Quantity Processed Today (Total: ${total})`;
+                chartInstances[chartId].data.datasets[0].label = `${process} Quantity Today (Total: ${total})`;
+                chartInstances[chartId].data.datasets[0].backgroundColor = bgColors;
+                chartInstances[chartId].data.datasets[0].borderColor = borderColors;
                 chartInstances[chartId].update();
                 return;
             }
@@ -448,10 +453,10 @@
                 data: {
                     labels: labels,
                     datasets: [{
-                        label: `Quantity Processed Today (Total: ${total})`,
+                        label: `${process} Quantity Today (Total: ${total})`,
                         data: data,
-                        backgroundColor: 'rgba(79, 70, 229, 0.8)', // primary color
-                        borderColor: '#4f46e5',
+                        backgroundColor: bgColors,
+                        borderColor: borderColors,
                         borderWidth: 1,
                         borderRadius: 4
                     }]
@@ -857,11 +862,11 @@
 
         /**
          * Generates and triggers the download of all data as a CSV file.
+         * Exports four blocks (one per process). Each block has a header row: Date, parts..., Total
          */
         window.downloadCSV = function() {
             if (allData.length === 0) {
-                // Using an element for display instead of alert()
-                const globalStatusDiv = document.getElementById('status-message-Production'); // Using Production status for temporary global message
+                const globalStatusDiv = document.getElementById('status-message-Production');
                 globalStatusDiv.textContent = 'No data available to download.';
                 globalStatusDiv.classList.add('text-red-600');
                 setTimeout(() => {
@@ -871,28 +876,51 @@
                 return;
             }
 
-            // Define CSV headers
-            const headers = ['Date', 'Part Line', 'Part Name', 'Process', 'Quantity', 'User ID', 'Timestamp'];
-            let csvContent = headers.join(',') + '\n';
+            const parts = PART_CONFIG;
+            let csvContent = '';
 
-            // Sort data by date for chronological CSV
-            const sortedData = [...allData].sort((a, b) => dateToTimestamp(a.date) - dateToTimestamp(b.date));
+            PROCESSES.forEach((process, pIndex) => {
+                // Section title row (process name)
+                csvContent += `"${process}"\n`;
 
-            sortedData.forEach(item => {
-                // Ensure timestamp is properly formatted
-                const timestampStr = item.timestamp instanceof Date ? item.timestamp.toISOString() : item.timestamp;
+                // Header row
+                const headers = ['Date', ...parts.map(p => `${p.line} ${p.name}`), 'Total'];
+                csvContent += headers.map(h => `"${h}"`).join(',') + '\n';
 
-                const row = [
-                    item.date,
-                    item.part_line,
-                    item.part_name,
-                    item.process,
-                    item.quantity,
-                    item.user_id,
-                    timestampStr
-                ];
-                // Escape commas in string fields (though unlikely here) and join
-                csvContent += row.map(field => `"${field}"`).join(',') + '\n';
+                // Dates for this process
+                const dateSet = Array.from(new Set(allData.filter(d => d.process === process).map(d => d.date))).sort((a, b) => dateToTimestamp(a) - dateToTimestamp(b));
+
+                // Totals for this process
+                const totalsPerPart = parts.map(() => 0);
+                let grandTotal = 0;
+
+                if (dateSet.length === 0) {
+                    // Add an empty row to keep consistent format
+                    csvContent += headers.map(() => '""').join(',') + '\n';
+                } else {
+                    dateSet.forEach(date => {
+                        const rowVals = parts.map((part, idx) => {
+                            const sum = allData
+                                .filter(d => d.process === process && d.date === date && d.part_id === part.id)
+                                .reduce((s, x) => s + x.quantity, 0);
+                            totalsPerPart[idx] += sum;
+                            return sum;
+                        });
+
+                        const rowTotal = rowVals.reduce((a, b) => a + b, 0);
+                        grandTotal += rowTotal;
+
+                        const row = [date, ...rowVals, rowTotal];
+                        csvContent += row.map(field => `"${field}"`).join(',') + '\n';
+                    });
+                }
+
+                // Totals row for this process
+                const totalsRow = ['Total', ...totalsPerPart, grandTotal];
+                csvContent += totalsRow.map(field => `"${field}"`).join(',') + '\n';
+
+                // Blank line separator between processes
+                csvContent += '\n';
             });
 
             // Create a Blob and trigger the download
