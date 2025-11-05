@@ -165,8 +165,18 @@
                         <div id="calendar-modal-${process}" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
                             <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-96 shadow-lg rounded-md bg-white">
                                 <div class="flex justify-between items-center mb-4">
+                                    <button onclick="navigateMonth('${process}', -1)" class="p-1 hover:bg-gray-100 rounded">
+                                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                                        </svg>
+                                    </button>
                                     <h3 class="text-lg font-semibold text-gray-900" id="calendar-title-${process}"></h3>
-                                    <button onclick="closeCalendarModal('${process}')" class="text-gray-400 hover:text-gray-500">&times;</button>
+                                    <button onclick="navigateMonth('${process}', 1)" class="p-1 hover:bg-gray-100 rounded">
+                                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                        </svg>
+                                    </button>
+                                    <button onclick="closeCalendarModal('${process}')" class="ml-4 text-gray-400 hover:text-gray-500">&times;</button>
                                 </div>
                                 <div class="grid grid-cols-7 gap-1 text-center text-sm mb-2">
                                     <div class="font-medium">Sun</div>
@@ -179,6 +189,34 @@
                                 </div>
                                 <div id="calendar-days-${process}" class="grid grid-cols-7 gap-1">
                                     <!-- Calendar days will be inserted here -->
+                                </div>
+                                <div class="mt-4 text-sm text-gray-600">
+                                    Click on a date to view or edit data
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Edit Data Modal -->
+                        <div id="edit-modal-${process}" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+                            <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-[32rem] shadow-lg rounded-md bg-white">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h3 class="text-lg font-semibold text-gray-900" id="edit-modal-title-${process}"></h3>
+                                    <button onclick="closeEditModal('${process}')" class="text-gray-400 hover:text-gray-500">&times;</button>
+                                </div>
+                                <div class="space-y-4">
+                                    <div id="edit-form-${process}">
+                                        <!-- Edit form will be dynamically inserted here -->
+                                    </div>
+                                    <div class="flex justify-end space-x-3 mt-4">
+                                        <button onclick="closeEditModal('${process}')" 
+                                            class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
+                                            Cancel
+                                        </button>
+                                        <button onclick="saveEditedData('${process}')"
+                                            class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/80">
+                                            Save Changes
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -569,23 +607,54 @@
             }
         }
 
+        // Track current viewing month/year
+        let currentViewMonth = new Date().getMonth();
+        let currentViewYear = new Date().getFullYear();
+
+        /**
+         * Navigate calendar month
+         * @param {string} process - The process name
+         * @param {number} delta - Month change (-1 or 1)
+         */
+        window.navigateMonth = function(process, delta) {
+            currentViewMonth += delta;
+            if (currentViewMonth > 11) {
+                currentViewMonth = 0;
+                currentViewYear++;
+            } else if (currentViewMonth < 0) {
+                currentViewMonth = 11;
+                currentViewYear--;
+            }
+            renderCalendar(process);
+        }
+
         /**
          * Shows the calendar modal for a process and populates it with data indicators
          * @param {string} process - The process name
          */
         window.showCalendarModal = function(process) {
             const modal = document.getElementById(`calendar-modal-${process}`);
+            currentViewMonth = new Date().getMonth();
+            currentViewYear = new Date().getFullYear();
+            renderCalendar(process);
+            modal.classList.remove('hidden');
+        }
+
+        /**
+         * Renders the calendar for current view month/year
+         * @param {string} process - The process name
+         */
+        function renderCalendar(process) {
             const daysContainer = document.getElementById(`calendar-days-${process}`);
             const titleElement = document.getElementById(`calendar-title-${process}`);
             
-            const today = new Date();
-            const currentMonth = today.getMonth();
-            const currentYear = today.getFullYear();
+            titleElement.textContent = new Date(currentViewYear, currentViewMonth).toLocaleDateString('en-US', { 
+                month: 'long', 
+                year: 'numeric' 
+            });
             
-            titleElement.textContent = new Date(currentYear, currentMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-            
-            const firstDay = new Date(currentYear, currentMonth, 1);
-            const lastDay = new Date(currentYear, currentMonth + 1, 0);
+            const firstDay = new Date(currentViewYear, currentViewMonth, 1);
+            const lastDay = new Date(currentViewYear, currentViewMonth + 1, 0);
             const daysInMonth = lastDay.getDate();
             const startingDay = firstDay.getDay();
             
@@ -594,8 +663,11 @@
                 .filter(d => d.process === process)
                 .reduce((acc, entry) => {
                     const date = new Date(entry.date);
-                    if (date.getMonth() === currentMonth && date.getFullYear() === currentYear) {
-                        acc[date.getDate()] = true;
+                    if (date.getMonth() === currentViewMonth && date.getFullYear() === currentViewYear) {
+                        if (!acc[date.getDate()]) {
+                            acc[date.getDate()] = [];
+                        }
+                        acc[date.getDate()].push(entry);
                     }
                     return acc;
                 }, {});
@@ -610,22 +682,151 @@
             // Add days of the month
             for (let day = 1; day <= daysInMonth; day++) {
                 const hasData = datesWithData[day];
-                const isToday = day === today.getDate();
+                const today = new Date();
+                const isToday = day === today.getDate() && 
+                              currentViewMonth === today.getMonth() && 
+                              currentViewYear === today.getFullYear();
+                
+                const dateStr = `${currentViewYear}-${String(currentViewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                
                 const dateClasses = [
-                    'p-2 rounded-full w-8 h-8 mx-auto flex items-center justify-center',
-                    hasData ? 'bg-primary text-white' : 'hover:bg-gray-100',
+                    'cursor-pointer p-2 rounded-full w-8 h-8 mx-auto flex items-center justify-center',
+                    hasData ? 'bg-primary text-white hover:bg-primary/80' : 'hover:bg-gray-100',
                     isToday ? 'ring-2 ring-primary ring-offset-2' : ''
                 ].join(' ');
                 
                 calendarHTML += `
                     <div class="text-center">
-                        <div class="${dateClasses}">${day}</div>
+                        <div class="${dateClasses}" 
+                             onclick="showEditModal('${process}', '${dateStr}')"
+                             title="${hasData ? 'Click to edit data' : 'Click to add data'}">
+                            ${day}
+                        </div>
                     </div>
                 `;
             }
             
             daysContainer.innerHTML = calendarHTML;
+        }
+
+        /**
+         * Shows the edit modal for a specific date
+         * @param {string} process - The process name
+         * @param {string} date - The date in YYYY-MM-DD format
+         */
+        window.showEditModal = function(process, date) {
+            const modal = document.getElementById(`edit-modal-${process}`);
+            const title = document.getElementById(`edit-modal-title-${process}`);
+            const form = document.getElementById(`edit-form-${process}`);
+            
+            title.textContent = `Edit ${process} Data for ${new Date(date).toLocaleDateString()}`;
+            
+            // Get existing data for this date
+            const existingData = PART_CONFIG.map(part => {
+                const record = allData.find(d => 
+                    d.process === process && 
+                    d.part_id === part.id && 
+                    d.date === date
+                );
+                return {
+                    ...part,
+                    quantity: record ? record.quantity : 0
+                };
+            });
+            
+            // Generate edit form
+            const formHTML = existingData.map(part => `
+                <div class="flex items-center space-x-4 p-2 hover:bg-gray-50 rounded" 
+                     style="border-left: 4px solid ${part.color}">
+                    <div class="flex-1">
+                        <div class="font-medium">${part.line} ${part.name}</div>
+                    </div>
+                    <input type="number" 
+                           value="${part.quantity}"
+                           min="0"
+                           class="w-24 p-2 border border-gray-300 rounded focus:ring-primary focus:border-primary"
+                           data-part-id="${part.id}"
+                           data-edit-date="${date}">
+                </div>
+            `).join('');
+            
+            form.innerHTML = formHTML;
             modal.classList.remove('hidden');
+        }
+
+        /**
+         * Closes the edit modal
+         * @param {string} process - The process name
+         */
+        window.closeEditModal = function(process) {
+            document.getElementById(`edit-modal-${process}`).classList.add('hidden');
+        }
+
+        /**
+         * Saves edited data
+         * @param {string} process - The process name
+         */
+        window.saveEditedData = function(process) {
+            const form = document.getElementById(`edit-form-${process}`);
+            const inputs = form.querySelectorAll('input[type="number"]');
+            let updated = false;
+            
+            inputs.forEach(input => {
+                const quantity = +(input.value) || 0;
+                const partId = input.dataset.partId;
+                const date = input.dataset.editDate;
+                const part = PART_CONFIG.find(p => p.id === partId);
+                
+                if (!part) return;
+                
+                // Find existing record or create new one
+                const existingIndex = allData.findIndex(d => 
+                    d.process === process && 
+                    d.part_id === partId && 
+                    d.date === date
+                );
+                
+                const record = {
+                    part_id: part.id,
+                    part_line: part.line,
+                    part_name: part.name,
+                    process: process,
+                    date: date,
+                    quantity: quantity,
+                    timestamp: new Date().toISOString(),
+                    user_id: userId
+                };
+                
+                if (existingIndex >= 0) {
+                    if (quantity > 0) {
+                        allData[existingIndex] = record;
+                    } else {
+                        allData.splice(existingIndex, 1); // Remove if quantity is 0
+                    }
+                } else if (quantity > 0) {
+                    allData.push(record);
+                }
+                
+                updated = true;
+            });
+            
+            if (updated) {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(allData));
+                renderCalendar(process); // Update calendar view
+                renderChartsForProcess(process, allData); // Update charts
+                updateCumulativeCards(process, allData); // Update cards
+                
+                const statusDiv = document.getElementById(`status-message-${process}`);
+                statusDiv.textContent = 'Data updated successfully!';
+                statusDiv.classList.remove('text-red-600');
+                statusDiv.classList.add('text-secondary');
+                setTimeout(() => {
+                    statusDiv.textContent = '';
+                    statusDiv.classList.remove('text-secondary');
+                }, 3000);
+            }
+            
+            closeEditModal(process);
         }
         
         /**
