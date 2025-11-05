@@ -119,13 +119,13 @@
 
         // Constants for Part Details
         const PART_CONFIG = [
-            { line: 'M14', name: 'FRS', id: 'M14-FRS' },
-            { line: 'M15', name: 'RBF', id: 'M15-RBF' },
-            { line: 'M16', name: 'ROR', id: 'M16-ROR' },
-            { line: 'M04', name: 'Fork-1', id: 'M04-Fork-1' },
-            { line: 'M17', name: 'Fork-2', id: 'M17-Fork-2' },
-            { line: 'G01', name: 'Fork-1', id: 'G01-Fork-1' },
-            { line: 'G01', name: 'Fork-2', id: 'G01-Fork-2' },
+            { line: 'M14', name: 'FRS', id: 'M14-FRS', color: '#4f46e5' },  // Primary Indigo
+            { line: 'M15', name: 'RBF', id: 'M15-RBF', color: '#10b981' },  // Emerald
+            { line: 'M16', name: 'ROR', id: 'M16-ROR', color: '#f97316' },  // Orange
+            { line: 'G01', name: 'Fork-1', id: 'G01-Fork-1', color: '#ef4444' },  // Red
+            { line: 'G01', name: 'Fork-2', id: 'G01-Fork-2', color: '#3b82f6' },  // Blue
+            { line: 'M04', name: 'Fork-1', id: 'M04-Fork-1', color: '#8b5cf6' },  // Purple
+            { line: 'M17', name: 'Fork-2', id: 'M17-Fork-2', color: '#ec4899' },  // Pink
         ];
 
         const PROCESSES = ['Production', 'Inspection', 'Dispatch', 'Rejection'];
@@ -149,13 +149,38 @@
                     <section id="data-entry-${process}" class="bg-white p-6 shadow-xl rounded-xl border border-primary/20">
                         <h2 class="text-2xl font-semibold mb-4 text-primary">${process} Entry Sheet</h2>
 
-                        <!-- Date Selector and Status -->
+                        <!-- Date Selector, Calendar and Status -->
                         <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 space-y-3 sm:space-y-0">
                             <div class="flex items-center space-x-3">
                                 <label for="entry-date-${process}" class="text-sm font-medium text-gray-700">Date:</label>
                                 <input type="date" id="entry-date-${process}" class="p-2 border border-gray-300 rounded-lg shadow-sm focus:ring-secondary focus:border-secondary transition duration-150">
+                                <button onclick="showCalendarModal('${process}')" class="px-3 py-1 text-sm bg-primary text-white rounded hover:bg-primary/80">
+                                    View Calendar
+                                </button>
                             </div>
                             <div id="status-message-${process}" class="text-sm text-red-600 font-medium"></div>
+                        </div>
+                        
+                        <!-- Calendar Modal -->
+                        <div id="calendar-modal-${process}" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+                            <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-96 shadow-lg rounded-md bg-white">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h3 class="text-lg font-semibold text-gray-900" id="calendar-title-${process}"></h3>
+                                    <button onclick="closeCalendarModal('${process}')" class="text-gray-400 hover:text-gray-500">&times;</button>
+                                </div>
+                                <div class="grid grid-cols-7 gap-1 text-center text-sm mb-2">
+                                    <div class="font-medium">Sun</div>
+                                    <div class="font-medium">Mon</div>
+                                    <div class="font-medium">Tue</div>
+                                    <div class="font-medium">Wed</div>
+                                    <div class="font-medium">Thu</div>
+                                    <div class="font-medium">Fri</div>
+                                    <div class="font-medium">Sat</div>
+                                </div>
+                                <div id="calendar-days-${process}" class="grid grid-cols-7 gap-1">
+                                    <!-- Calendar days will be inserted here -->
+                                </div>
+                            </div>
                         </div>
 
                         <!-- Input Grid Table -->
@@ -183,9 +208,19 @@
                     <section id="dashboard-${process}" class="space-y-6">
                         <h2 class="text-2xl font-semibold text-primary">${process} Live Dashboard</h2>
 
+                        <!-- Cumulative Cards Grid -->
+                        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6">
+                            ${PART_CONFIG.map(part => `
+                                <div class="bg-white p-4 rounded-xl shadow-md border-l-4" style="border-left-color: ${part.color}">
+                                    <div class="text-sm font-medium text-gray-600">${part.line} ${part.name}</div>
+                                    <div class="text-2xl font-bold mt-2" id="cumulative-${process}-${part.id}">0</div>
+                                    <div class="text-xs text-gray-500 mt-1">Total ${process}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+
                         <!-- Charts Grid -->
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
                             <!-- Daily Total Quantity Chart -->
                             <div class="bg-white p-6 shadow-xl rounded-xl border border-gray-200">
                                 <h3 class="text-xl font-medium text-gray-800 mb-4">Daily Activity: ${process}</h3>
@@ -201,7 +236,6 @@
                                     <canvas id="cumulativeChart-${process}"></canvas>
                                 </div>
                             </div>
-
                         </div>
                     </section>
                 `;
@@ -237,9 +271,10 @@
                 }
             });
             
-            // Re-render charts for the new tab in case they weren't rendered fully when hidden
+            // Re-render charts and update cumulative cards
             if (allData.length > 0) {
-                 renderChartsForProcess(currentProcess, allData);
+                renderChartsForProcess(currentProcess, allData);
+                updateCumulativeCards(currentProcess, allData);
             }
         }
 
@@ -406,14 +441,12 @@
             const ctx = document.getElementById(chartId)?.getContext('2d');
             if (!ctx) return;
 
-            const colors = ['#4f46e5', '#10b981', '#f97316', '#ef4444', '#3b82f6', '#8b5cf6', '#a855f7'];
-
-            const datasets = PART_CONFIG.map((part, index) => {
+            const datasets = PART_CONFIG.map(part => {
                 return {
                     label: `${part.line} ${part.name}`,
                     data: cumulativePartTotals[part.id] || [],
-                    borderColor: colors[index % colors.length],
-                    backgroundColor: colors[index % colors.length] + '40', // light fill
+                    borderColor: part.color,
+                    backgroundColor: part.color + '40', // light fill
                     tension: 0.3,
                     fill: false,
                     pointRadius: 3,
@@ -534,6 +567,91 @@
                     }
                 }, 4000);
             }
+        }
+
+        /**
+         * Shows the calendar modal for a process and populates it with data indicators
+         * @param {string} process - The process name
+         */
+        window.showCalendarModal = function(process) {
+            const modal = document.getElementById(`calendar-modal-${process}`);
+            const daysContainer = document.getElementById(`calendar-days-${process}`);
+            const titleElement = document.getElementById(`calendar-title-${process}`);
+            
+            const today = new Date();
+            const currentMonth = today.getMonth();
+            const currentYear = today.getFullYear();
+            
+            titleElement.textContent = new Date(currentYear, currentMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+            
+            const firstDay = new Date(currentYear, currentMonth, 1);
+            const lastDay = new Date(currentYear, currentMonth + 1, 0);
+            const daysInMonth = lastDay.getDate();
+            const startingDay = firstDay.getDay();
+            
+            // Get all dates with data for this process and month
+            const datesWithData = allData
+                .filter(d => d.process === process)
+                .reduce((acc, entry) => {
+                    const date = new Date(entry.date);
+                    if (date.getMonth() === currentMonth && date.getFullYear() === currentYear) {
+                        acc[date.getDate()] = true;
+                    }
+                    return acc;
+                }, {});
+            
+            let calendarHTML = '';
+            
+            // Add empty cells for days before the first of the month
+            for (let i = 0; i < startingDay; i++) {
+                calendarHTML += '<div class="p-2"></div>';
+            }
+            
+            // Add days of the month
+            for (let day = 1; day <= daysInMonth; day++) {
+                const hasData = datesWithData[day];
+                const isToday = day === today.getDate();
+                const dateClasses = [
+                    'p-2 rounded-full w-8 h-8 mx-auto flex items-center justify-center',
+                    hasData ? 'bg-primary text-white' : 'hover:bg-gray-100',
+                    isToday ? 'ring-2 ring-primary ring-offset-2' : ''
+                ].join(' ');
+                
+                calendarHTML += `
+                    <div class="text-center">
+                        <div class="${dateClasses}">${day}</div>
+                    </div>
+                `;
+            }
+            
+            daysContainer.innerHTML = calendarHTML;
+            modal.classList.remove('hidden');
+        }
+        
+        /**
+         * Closes the calendar modal for a process
+         * @param {string} process - The process name
+         */
+        window.closeCalendarModal = function(process) {
+            document.getElementById(`calendar-modal-${process}`).classList.add('hidden');
+        }
+
+        /**
+         * Updates the cumulative cards for a process
+         * @param {string} process - The process name
+         * @param {Array} data - The process data
+         */
+        function updateCumulativeCards(process, data) {
+            PART_CONFIG.forEach(part => {
+                const total = data
+                    .filter(d => d.part_id === part.id && d.process === process)
+                    .reduce((sum, d) => sum + d.quantity, 0);
+                
+                const element = document.getElementById(`cumulative-${process}-${part.id}`);
+                if (element) {
+                    element.textContent = total.toLocaleString();
+                }
+            });
         }
 
         /**
